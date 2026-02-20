@@ -1,14 +1,14 @@
-
 # -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
+login_icon_path = 'img/L_icon.ico'
 
 
 a = Analysis(
     ['notion_login_manager.py'],
     pathex=[],
     binaries=[],
-    datas=[('img/login.ico', 'img')],
+    datas=[(login_icon_path, 'img')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -41,5 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='img/login.ico',
+    icon=login_icon_path,
 )

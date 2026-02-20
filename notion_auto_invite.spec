@@ -1,13 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
+auto_icon_path = 'img/A_icon.ico'
 
 
 a = Analysis(
     ['notion_auto_invite.py'],
     pathex=[],
     binaries=[],
-    datas=[('img/auto.png', 'img')],
+    datas=[(auto_icon_path, 'img')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -40,5 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='img/auto.ico',
+    icon=auto_icon_path,
 )
