@@ -19,6 +19,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 LOGIN_URL = "https://www.notion.so/login"
 HOME_URL = "https://www.notion.so/"
 STATE_FILE = Path("notion_login_state.json")
+LOG_FILE = Path("notion_login_log.json")
 
 
 class NotionLoginManager:
@@ -194,16 +195,21 @@ class LoginUI:
         }
 
         root.title("Notion ログイントークン管理")
-        root.geometry("520x430")
+        root.geometry("520x620")
         root.configure(bg=self.colors["bg"])
 
         self.email_var = tk.StringVar()
         self.password_var = tk.StringVar()
         self.check_time_var = tk.StringVar(value="09:00")
         self.status_var = tk.StringVar(value="初期化中...")
+        self.token_path_var = tk.StringVar(value="")
+
+        self.log_path = LOG_FILE
+        self.log_widget: Optional[tk.Text] = None
 
         self._build_ui()
         self._load_state_to_form()
+        self._append_log("実行開始")
         self._start_scheduler()
 
 
@@ -253,6 +259,28 @@ class LoginUI:
         ]
         return canvas.create_polygon(points, smooth=True, **kwargs)
 
+    def _append_log(self, message: str) -> None:
+        entry = {"timestamp": datetime.now().isoformat(), "message": message}
+        logs: List[Dict[str, str]] = []
+
+        if self.log_path.exists():
+            try:
+                with self.log_path.open("r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, list):
+                        logs = loaded
+            except (json.JSONDecodeError, OSError):
+                logs = []
+
+        logs.append(entry)
+        with self.log_path.open("w", encoding="utf-8") as f:
+            json.dump(logs, f, ensure_ascii=False, indent=2)
+
+        if self.log_widget is not None:
+            self.log_widget.configure(state="normal")
+            self.log_widget.insert("end", f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
+            self.log_widget.see("end")
+            self.log_widget.configure(state="disabled")
     def _make_input(self, parent: tk.Widget, text_var: tk.StringVar, show: Optional[str] = None) -> tk.Frame:
         wrapper = tk.Frame(parent, bg=self.colors["card"])
         canvas = tk.Canvas(
@@ -270,7 +298,7 @@ class LoginUI:
             2,
             438,
             42,
-            radius=14,
+            radius=20,
             fill="#FFFFFF",
             outline=self.colors["input_border"],
             width=1,
@@ -308,7 +336,7 @@ class LoginUI:
             2,
             width - 2,
             height - 2,
-            radius=16,
+            radius=20,
             fill=fill,
             outline=border_color,
             width=1,
@@ -387,6 +415,38 @@ class LoginUI:
         )
         status_label.pack(anchor="w", pady=(14, 0))
 
+        token_path_label = tk.Label(
+            card,
+            textvariable=self.token_path_var,
+            bg=self.colors["card"],
+            fg=self.colors["muted"],
+            wraplength=440,
+            justify="left",
+            font=("Segoe UI", 9),
+        )
+        token_path_label.pack(anchor="w", pady=(6, 0))
+
+        tk.Label(
+            card,
+            text="ログ",
+            bg=self.colors["card"],
+            fg=self.colors["muted"],
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w", pady=(14, 6))
+
+        self.log_widget = tk.Text(
+            card,
+            height=8,
+            bd=1,
+            relief="solid",
+            bg="#FAF8FD",
+            fg="#2B2338",
+            font=("Consolas", 9),
+            wrap="word",
+        )
+        self.log_widget.pack(fill="both", expand=True)
+        self.log_widget.configure(state="disabled")
+
     def _load_state_to_form(self) -> None:
         state = self.manager.load_state()
         self.email_var.set(state["credentials"].get("email", ""))
@@ -410,10 +470,16 @@ class LoginUI:
             messagebox.showerror("入力エラー", "時刻は HH:MM 形式で入力してください")
             return
 
+        if not messagebox.askyesno("確認", "設定を保存してよろしいですか？"):
+            return
         self.manager.save_state(self._collect_state())
         self.status_var.set("設定を保存しました")
+        self._append_log("設定保存")
 
     def save_token_now(self) -> None:
+        if not messagebox.askyesno("確認", "トークンを保存してよろしいですか？"):
+            return
+
         try:
             state = self._collect_state()
             email = state["credentials"]["email"]
@@ -425,7 +491,11 @@ class LoginUI:
             token = self.manager.save_login_token(email=email, password=password)
             state["token"] = token
             self.manager.save_state(state)
+            token_path_text = f"保存トークン: {self.manager.state_path.resolve()}"
+            self.token_path_var.set(token_path_text)
             self.status_var.set("トークン保存に成功しました")
+            self._append_log("保存完了")
+            self._append_log(token_path_text)
         except TimeoutException:
             self.status_var.set("ログイン画面の要素取得でタイムアウトしました")
         except Exception as e:
