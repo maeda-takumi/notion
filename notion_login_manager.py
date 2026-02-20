@@ -184,8 +184,18 @@ class LoginUI:
         self.root = root
         self.manager = manager
 
+        self.colors = {
+            "bg": "#F6F4FA",
+            "card": "#FFFFFF",
+            "accent": "#4A2A75",
+            "accent_hover": "#3F2364",
+            "muted": "#7A6E8F",
+            "input_border": "#DDD4EB",
+        }
+
         root.title("Notion ログイントークン管理")
-        root.geometry("460x300")
+        root.geometry("520x430")
+        root.configure(bg=self.colors["bg"])
 
         self.email_var = tk.StringVar()
         self.password_var = tk.StringVar()
@@ -196,32 +206,186 @@ class LoginUI:
         self._load_state_to_form()
         self._start_scheduler()
 
+
+    @staticmethod
+    def _rounded_rect(canvas: tk.Canvas, x1: int, y1: int, x2: int, y2: int, radius: int, **kwargs) -> int:
+        points = [
+            x1 + radius,
+            y1,
+            x1 + radius,
+            y1,
+            x2 - radius,
+            y1,
+            x2 - radius,
+            y1,
+            x2,
+            y1,
+            x2,
+            y1 + radius,
+            x2,
+            y1 + radius,
+            x2,
+            y2 - radius,
+            x2,
+            y2 - radius,
+            x2,
+            y2,
+            x2 - radius,
+            y2,
+            x2 - radius,
+            y2,
+            x1 + radius,
+            y2,
+            x1 + radius,
+            y2,
+            x1,
+            y2,
+            x1,
+            y2 - radius,
+            x1,
+            y2 - radius,
+            x1,
+            y1 + radius,
+            x1,
+            y1 + radius,
+            x1,
+            y1,
+        ]
+        return canvas.create_polygon(points, smooth=True, **kwargs)
+
+    def _make_input(self, parent: tk.Widget, text_var: tk.StringVar, show: Optional[str] = None) -> tk.Frame:
+        wrapper = tk.Frame(parent, bg=self.colors["card"])
+        canvas = tk.Canvas(
+            wrapper,
+            bg=self.colors["card"],
+            highlightthickness=0,
+            bd=0,
+            width=440,
+            height=44,
+        )
+        canvas.pack(fill="x")
+        self._rounded_rect(
+            canvas,
+            2,
+            2,
+            438,
+            42,
+            radius=14,
+            fill="#FFFFFF",
+            outline=self.colors["input_border"],
+            width=1,
+        )
+        entry = tk.Entry(
+            canvas,
+            textvariable=text_var,
+            show=show,
+            bd=0,
+            relief="flat",
+            bg="#FFFFFF",
+            fg="#2B2338",
+            insertbackground="#2B2338",
+            font=("Segoe UI", 11),
+        )
+        canvas.create_window(220, 22, width=396, height=26, window=entry)
+        return wrapper
+
+    def _make_button(
+        self,
+        parent: tk.Widget,
+        text: str,
+        command,
+        width: int = 210,
+        filled: bool = True,
+    ) -> tk.Canvas:
+        height = 46
+        canvas = tk.Canvas(parent, width=width, height=height, bd=0, highlightthickness=0, bg=self.colors["card"])
+        fill = self.colors["accent"] if filled else "#F2ECFA"
+        text_color = "#FFFFFF" if filled else self.colors["accent"]
+        border_color = self.colors["accent"] if not filled else self.colors["accent"]
+        button_shape = self._rounded_rect(
+            canvas,
+            2,
+            2,
+            width - 2,
+            height - 2,
+            radius=16,
+            fill=fill,
+            outline=border_color,
+            width=1,
+        )
+        label = canvas.create_text(
+            width // 2,
+            height // 2,
+            text=text,
+            fill=text_color,
+            font=("Segoe UI", 10, "bold"),
+        )
+
+        def _on_enter(_event):
+            if filled:
+                canvas.itemconfigure(button_shape, fill=self.colors["accent_hover"])
+
+        def _on_leave(_event):
+            if filled:
+                canvas.itemconfigure(button_shape, fill=self.colors["accent"])
+
+        for target in (canvas,):
+            target.bind("<Button-1>", lambda _e: command())
+            target.bind("<Enter>", _on_enter)
+            target.bind("<Leave>", _on_leave)
+        canvas.tag_bind(label, "<Button-1>", lambda _e: command())
+        return canvas
+
     def _build_ui(self) -> None:
-        frame = tk.Frame(self.root, padx=12, pady=12)
-        frame.pack(fill=tk.BOTH, expand=True)
+        outer = tk.Frame(self.root, bg=self.colors["bg"], padx=22, pady=22)
+        outer.pack(fill="both", expand=True)
 
-        tk.Label(frame, text="メールアドレス").grid(row=0, column=0, sticky="w")
-        tk.Entry(frame, textvariable=self.email_var, width=45).grid(row=1, column=0, columnspan=2, sticky="ew")
+        card = tk.Frame(outer, bg=self.colors["card"], padx=20, pady=20)
+        card.pack(fill="both", expand=True)
 
-        tk.Label(frame, text="パスワード").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        tk.Entry(frame, textvariable=self.password_var, show="*", width=45).grid(
-            row=3, column=0, columnspan=2, sticky="ew"
+        title = tk.Label(
+            card,
+            text="Notion ログイントークン管理",
+            bg=self.colors["card"],
+            fg="#2E2342",
+            font=("Segoe UI", 14, "bold"),
         )
+        title.pack(anchor="w", pady=(0, 14))
 
-        tk.Label(frame, text="毎日チェック時刻 (HH:MM)").grid(row=4, column=0, sticky="w", pady=(8, 0))
-        tk.Entry(frame, textvariable=self.check_time_var, width=12).grid(row=5, column=0, sticky="w")
+        tk.Label(card, text="メールアドレス", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(
+            anchor="w"
+        )
+        self._make_input(card, self.email_var).pack(fill="x", pady=(6, 10))
 
-        tk.Button(frame, text="設定を保存", command=self.save_settings).grid(row=6, column=0, sticky="w", pady=(10, 0))
-        tk.Button(frame, text="今すぐトークン保存", command=self.save_token_now).grid(
-            row=6, column=1, sticky="e", pady=(10, 0)
-        )
-        tk.Button(frame, text="今すぐトークン確認/復旧", command=self.recover_now).grid(
-            row=7, column=0, columnspan=2, sticky="ew", pady=(8, 0)
-        )
+        tk.Label(card, text="パスワード", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w")
+        self._make_input(card, self.password_var, show="*").pack(fill="x", pady=(6, 10))
 
-        tk.Label(frame, textvariable=self.status_var, fg="blue", wraplength=420, justify="left").grid(
-            row=8, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        tk.Label(
+            card,
+            text="毎日チェック時刻 (HH:MM)",
+            bg=self.colors["card"],
+            fg=self.colors["muted"],
+            font=("Segoe UI", 10),
+        ).pack(anchor="w")
+        self._make_input(card, self.check_time_var).pack(fill="x", pady=(6, 14))
+
+        button_row = tk.Frame(card, bg=self.colors["card"])
+        button_row.pack(fill="x")
+        self._make_button(button_row, "設定を保存", self.save_settings, filled=False).pack(side="left")
+        self._make_button(button_row, "今すぐトークン保存", self.save_token_now).pack(side="right")
+
+        self._make_button(card, "今すぐトークン確認/復旧", self.recover_now, width=440).pack(fill="x", pady=(10, 0))
+
+        status_label = tk.Label(
+            card,
+            textvariable=self.status_var,
+            bg=self.colors["card"],
+            fg=self.colors["accent"],
+            wraplength=440,
+            justify="left",
+            font=("Segoe UI", 10),
         )
+        status_label.pack(anchor="w", pady=(14, 0))
 
     def _load_state_to_form(self) -> None:
         state = self.manager.load_state()
