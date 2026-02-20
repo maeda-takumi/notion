@@ -38,6 +38,8 @@ class InviteTarget:
 class NotionInviteService:
     def __init__(self, state_file: Path) -> None:
         self.state_file = state_file
+        self._driver: Optional[webdriver.Chrome] = None
+        self._is_logged_in = False
 
     def _load_token_cookies(self) -> List[Dict[str, Any]]:
         if not self.state_file.exists():
@@ -55,6 +57,23 @@ class NotionInviteService:
 
     def _new_driver(self) -> webdriver.Chrome:
         return webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+    def _get_driver(self) -> webdriver.Chrome:
+        if self._driver is None:
+            self._driver = self._new_driver()
+            self._is_logged_in = False
+        return self._driver
+
+    def _reset_driver(self) -> None:
+        if self._driver is not None:
+            try:
+                self._driver.quit()
+            except Exception:
+                pass
+        self._driver = None
+        self._is_logged_in = False
+
+    def close_driver(self) -> None:
+        self._reset_driver()
 
     def _login_with_token(self, driver: webdriver.Chrome, cookies: List[Dict[str, Any]]) -> None:
         driver.get(LOGIN_URL)
@@ -70,78 +89,83 @@ class NotionInviteService:
         driver.get(LOGIN_URL)
         time.sleep(3)
 
-    def invite_guest(self, email: str, notion_page_url: str) -> None:
+    def _invite_guest_once(self, email: str, notion_page_url: str) -> None:
         cookies = self._load_token_cookies()
-        driver = self._new_driver()
+        driver = self._get_driver()
         wait = WebDriverWait(driver, 30)
 
-        try:
+        if not self._is_logged_in:
             self._login_with_token(driver, cookies)
+            self._is_logged_in = True
 
-            driver.get(notion_page_url)
-            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        driver.get(notion_page_url)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
-            share_btn = wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//*[contains(@class,'notion-topbar-share-menu')]"))
+        share_btn = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(@class,'notion-topbar-share-menu')]"))
+        )
+        driver.execute_script("arguments[0].click();", share_btn)
+        wait.until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//div[@role='dialog' or @role='menu' or @data-overlay='true']")
             )
-            driver.execute_script("arguments[0].click();", share_btn)
-            wait.until(
-                EC.presence_of_element_located(
-                    (By.XPATH, "//div[@role='dialog' or @role='menu' or @data-overlay='true']")
+        )
+
+        email_input = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//input[contains(@placeholder,'メール') or contains(@placeholder,'email') or contains(@aria-label,'メール') or contains(@aria-label,'email')]",
                 )
             )
+        )
+        email_input.clear()
+        email_input.send_keys(email)
 
-            email_input = wait.until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        "//input[contains(@placeholder,'メール') or contains(@placeholder,'email') or contains(@aria-label,'メール') or contains(@aria-label,'email')]",
-                    )
+        role_btn = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//div[@role='button'][.//span[contains(text(),'フルアクセス権限') or contains(text(),'Can edit')]]",
                 )
             )
-            email_input.clear()
-            email_input.send_keys(email)
+        )
+        role_btn.click()
+        view_btn = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//div[@role='menuitem']//div[contains(text(),'読み取り権限') or contains(text(),'Can view')]",
+                )
+            )
+        )
+        view_btn.click()
+        invite_btn = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//div[@role='button' and (contains(text(),'招待') or contains(text(),'Invite'))]",
+                )
+            )
+        )
+        invite_btn.click()
 
-            role_btn = wait.until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        "//div[@role='button'][.//span[contains(text(),'フルアクセス権限') or contains(text(),'Can edit')]]",
-                    )
-                )
+        wait.until(
+            EC.any_of(
+                EC.text_to_be_present_in_element(
+                    (By.XPATH, "//div[@role='button']"),
+                    "招待済み",
+                ),
+                EC.invisibility_of_element(invite_btn),
             )
-            role_btn.click()
-            view_btn = wait.until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        "//div[@role='menuitem']//div[contains(text(),'読み取り権限') or contains(text(),'Can view')]",
-                    )
-                )
-            )
-            view_btn.click()
-            invite_btn = wait.until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        "//div[@role='button' and (contains(text(),'招待') or contains(text(),'Invite'))]",
-                    )
-                )
-            )
-            invite_btn.click()
+        )
 
-            wait.until(
-                EC.any_of(
-                    EC.text_to_be_present_in_element(
-                        (By.XPATH, "//div[@role='button']"),
-                        "招待済み",
-                    ),
-                    EC.invisibility_of_element(invite_btn),
-                )
-            )
-
-        finally:
-            driver.quit()
+    def invite_guest(self, email: str, notion_page_url: str) -> None:
+        try:
+            self._invite_guest_once(email=email, notion_page_url=notion_page_url)
+        except Exception:
+            self._reset_driver()
+            self._invite_guest_once(email=email, notion_page_url=notion_page_url)
 
 
 def load_targets(config_path: Path) -> Dict[str, InviteTarget]:
@@ -244,28 +268,30 @@ def run_polling(
     stop_event: threading.Event,
 ) -> None:
     cycle = 0
-    while not stop_event.is_set():
-        cycle += 1
-        started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_callback(f"=== ポーリング {cycle} 回目を開始 ({started_at}) ===")
+    try:
+        while not stop_event.is_set():
+            cycle += 1
+            started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_callback(f"=== ポーリング {cycle} 回目を開始 ({started_at}) ===")
 
-        try:
-            total_invited = process_all_targets(
-                service=service,
-                credentials_path=credentials_path,
-                targets=targets,
-                log_callback=log_callback,
-            )
-            log_callback(f"=== ポーリング {cycle} 回目が完了 (合計招待数={total_invited}) ===")
-        except Exception as e:
-            log_callback(f"ポーリング {cycle} 回目でエラー: {type(e).__name__}: {e}")
-            for line in traceback.format_exc().strip().splitlines():
-                log_callback(f"  {line}")
+            try:
+                total_invited = process_all_targets(
+                    service=service,
+                    credentials_path=credentials_path,
+                    targets=targets,
+                    log_callback=log_callback,
+                )
+                log_callback(f"=== ポーリング {cycle} 回目が完了 (合計招待数={total_invited}) ===")
+            except Exception as e:
+                log_callback(f"ポーリング {cycle} 回目でエラー: {type(e).__name__}: {e}")
+                for line in traceback.format_exc().strip().splitlines():
+                    log_callback(f"  {line}")
 
-        if stop_event.wait(poll_interval_seconds):
-            break
-
-    log_callback("ポーリングを停止しました")
+            if stop_event.wait(poll_interval_seconds):
+                break
+    finally:
+        service.close_driver()
+        log_callback("ポーリングを停止しました")
 
 
 class InvitePollingUI:
@@ -299,6 +325,8 @@ class InvitePollingUI:
         self.log_widget: Optional[tk.Text] = None
 
         self._build_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
 
     def _set_window_icon(self) -> None:
         icon_path = resource_path("img/auto.png")
@@ -599,6 +627,11 @@ class InvitePollingUI:
         self.status_var.set("停止リクエスト送信済み")
         self._append_log("停止リクエストを送信しました")
 
+    def _on_close(self) -> None:
+        self.stop_event.set()
+        self.service.close_driver()
+        self.root.destroy()
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Notion 自動招待（引数なし/--ui でポーリングUI起動、target 指定で単発実行）"
@@ -643,13 +676,16 @@ def run_single_target(args: argparse.Namespace) -> None:
         raise ValueError(f"不明な target: {args.target}. 利用可能: {available}")
 
     service = NotionInviteService(state_file=Path(args.state_file))
-    invited = process_target(
-        service=service,
-        credentials_path=Path(args.credentials),
-        target_name=args.target,
-        target=targets[args.target],
-    )
-    print(f"処理完了: target={args.target}, invited={invited}")
+    try:
+        invited = process_target(
+            service=service,
+            credentials_path=Path(args.credentials),
+            target_name=args.target,
+            target=targets[args.target],
+        )
+        print(f"処理完了: target={args.target}, invited={invited}")
+    finally:
+        service.close_driver()
 
 
 def run_ui(state_file: Path) -> None:
