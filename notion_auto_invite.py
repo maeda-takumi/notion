@@ -2,6 +2,7 @@ import argparse
 import json
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -213,7 +214,9 @@ def run_polling(
             )
             log_callback(f"=== ポーリング {cycle} 回目が完了 (合計招待数={total_invited}) ===")
         except Exception as e:
-            log_callback(f"ポーリング {cycle} 回目でエラー: {e}")
+            log_callback(f"ポーリング {cycle} 回目でエラー: {type(e).__name__}: {e}")
+            for line in traceback.format_exc().strip().splitlines():
+                log_callback(f"  {line}")
 
         if stop_event.wait(poll_interval_seconds):
             break
