@@ -28,3 +28,48 @@ python notion_login_manager.py
 
 - 保存先JSONにはログイン情報が含まれるため、取り扱いには注意してください。
 - Notionの画面仕様が変更された場合、ボタン要素の特定条件を更新する必要があります。
+
+
+## Notion 自動招待（統合版）
+
+`元システム/invite_notion_*.py` で分散していた処理を、
+`notion_auto_invite.py` に統一しました。
+
+- 招待処理ロジックは共通化
+- 参照先（スプレッドシート / NotionページURL）は `notion_invite_targets.json` で切替
+- ログイントークンは **旧 `notion_cookies.pkl` ではなく**
+  `notion_login_manager.py` が保存する `notion_login_state.json` を利用
+
+### 実行例
+
+```bash
+python notion_auto_invite.py week1_week2
+```
+
+任意パス指定:
+
+```bash
+python notion_auto_invite.py week1_week2 \
+  --config notion_invite_targets.json \
+  --state-file notion_login_state.json \
+  --credentials credentials.json
+```
+
+### 設定ファイル形式
+
+`notion_invite_targets.json`
+
+```json
+{
+  "week1_week2": {
+    "spreadsheet_key": "...",
+    "sheet_name": "シート1",
+    "notion_page_url": "https://www.notion.so/...",
+    "email_column": 12,
+    "status_column": 13,
+    "invited_text": "招待済み"
+  }
+}
+```
+
+`email_column` / `status_column` / `invited_text` は省略可能です。
