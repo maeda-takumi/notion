@@ -600,8 +600,14 @@ class InvitePollingUI:
         self._append_log("停止リクエストを送信しました")
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Notion 自動招待（単発 + ポーリングUI）")
-    parser.add_argument("target", nargs="?", help="招待設定名（例: week1_week2）")
+    parser = argparse.ArgumentParser(
+        description="Notion 自動招待（引数なし/--ui でポーリングUI起動、target 指定で単発実行）"
+    )
+    parser.add_argument(
+        "target",
+        nargs="?",
+        help="招待設定名（例: week1_week2）。未指定時は UI を起動",
+    )
     parser.add_argument(
         "--config",
         default="notion_invite_targets.json",
@@ -620,7 +626,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ui",
         action="store_true",
-        help="ポーリングUIを起動する",
+        help="ポーリングUIを起動する（target 未指定時はデフォルトで UI 起動）",
     )
     return parser.parse_args()
 
@@ -655,7 +661,7 @@ def run_ui(state_file: Path) -> None:
 
 def main() -> None:
     args = parse_args()
-    if args.ui:
+    if args.ui or args.target is None:
         run_ui(state_file=Path(args.state_file))
         return
     run_single_target(args)
