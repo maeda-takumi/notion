@@ -73,3 +73,17 @@ python notion_auto_invite.py week1_week2 \
 ```
 
 `email_column` / `status_column` / `invited_text` は省略可能です。
+`email_column` / `status_column` / `invited_text` は省略可能です。
+## PyInstaller での配布
+
+以下の spec を用意しています。
+
+- `notion_auto_invite.spec`（アイコン: `img/auto.png`）
+- `notion_login_manager.spec`（アイコン: `img/login.png`）
+
+ビルド例:
+
+```bash
+pyinstaller notion_auto_invite.spec
+pyinstaller notion_login_manager.spec
+```

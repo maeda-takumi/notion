@@ -1,5 +1,6 @@
 import json
 import threading
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,10 @@ HOME_URL = "https://www.notion.so/"
 STATE_FILE = Path("notion_login_state.json")
 LOG_FILE = Path("notion_login_log.json")
 
+
+def resource_path(relative_path: str) -> Path:
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base_path / relative_path
 
 class NotionLoginManager:
     def __init__(self, state_path: Path) -> None:
@@ -197,6 +202,8 @@ class LoginUI:
         root.title("Notion ログイントークン管理")
         root.geometry("980x640")
         root.configure(bg=self.colors["bg"])
+        self._icon_image: Optional[tk.PhotoImage] = None
+        self._set_window_icon()
 
         self.email_var = tk.StringVar()
         self.password_var = tk.StringVar()
@@ -213,6 +220,16 @@ class LoginUI:
         self._start_scheduler()
 
 
+    def _set_window_icon(self) -> None:
+        icon_path = resource_path("img/login.png")
+        if not icon_path.exists():
+            return
+        try:
+            self._icon_image = tk.PhotoImage(file=str(icon_path))
+            self.root.iconphoto(True, self._icon_image)
+        except tk.TclError:
+            pass
+        
     @staticmethod
     def _rounded_rect(canvas: tk.Canvas, x1: int, y1: int, x2: int, y2: int, radius: int, **kwargs) -> int:
         points = [

@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 import threading
 import time
 import traceback
@@ -19,6 +20,10 @@ from tkinter import messagebox
 from webdriver_manager.chrome import ChromeDriverManager
 LOGIN_URL = "https://www.notion.so/login"
 
+
+def resource_path(relative_path: str) -> Path:
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base_path / relative_path
 
 @dataclass
 class InviteTarget:
@@ -282,6 +287,8 @@ class InvitePollingUI:
         root.title("Notion 自動招待ポーリング")
         root.geometry("980x640")
         root.configure(bg=self.colors["bg"])
+        self._icon_image: Optional[tk.PhotoImage] = None
+        self._set_window_icon()
 
         self.config_var = tk.StringVar(value="notion_invite_targets.json")
         self.credentials_var = tk.StringVar(value="credentials.json")
@@ -293,6 +300,15 @@ class InvitePollingUI:
 
         self._build_ui()
 
+    def _set_window_icon(self) -> None:
+        icon_path = resource_path("img/auto.png")
+        if not icon_path.exists():
+            return
+        try:
+            self._icon_image = tk.PhotoImage(file=str(icon_path))
+            self.root.iconphoto(True, self._icon_image)
+        except tk.TclError:
+            pass
     @staticmethod
     def _rounded_rect(canvas: tk.Canvas, x1: int, y1: int, x2: int, y2: int, radius: int, **kwargs) -> int:
         points = [
