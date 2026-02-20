@@ -1,0 +1,7 @@
+# secrets
+元システム/credentials.json
+**/credentials.json
+*.pkl
+notion_login_state.json
+__pycache__/
+*.pyc
