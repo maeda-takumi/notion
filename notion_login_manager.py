@@ -195,7 +195,7 @@ class LoginUI:
         }
 
         root.title("Notion ログイントークン管理")
-        root.geometry("520x620")
+        root.geometry("980x640")
         root.configure(bg=self.colors["bg"])
 
         self.email_var = tk.StringVar()
@@ -281,14 +281,20 @@ class LoginUI:
             self.log_widget.insert("end", f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
             self.log_widget.see("end")
             self.log_widget.configure(state="disabled")
-    def _make_input(self, parent: tk.Widget, text_var: tk.StringVar, show: Optional[str] = None) -> tk.Frame:
+    def _make_input(
+        self,
+        parent: tk.Widget,
+        text_var: tk.StringVar,
+        show: Optional[str] = None,
+        width: int = 360,
+    ) -> tk.Frame:
         wrapper = tk.Frame(parent, bg=self.colors["card"])
         canvas = tk.Canvas(
             wrapper,
             bg=self.colors["card"],
             highlightthickness=0,
             bd=0,
-            width=440,
+            width=width,
             height=44,
         )
         canvas.pack(fill="x")
@@ -296,7 +302,7 @@ class LoginUI:
             canvas,
             2,
             2,
-            438,
+            width - 2,
             42,
             radius=20,
             fill="#FFFFFF",
@@ -314,7 +320,7 @@ class LoginUI:
             insertbackground="#2B2338",
             font=("Segoe UI", 11),
         )
-        canvas.create_window(220, 22, width=396, height=26, window=entry)
+        canvas.create_window(width // 2, 22, width=width - 44, height=26, window=entry)
         return wrapper
 
     def _make_button(
@@ -357,11 +363,10 @@ class LoginUI:
             if filled:
                 canvas.itemconfigure(button_shape, fill=self.colors["accent"])
 
-        for target in (canvas,):
-            target.bind("<Button-1>", lambda _e: command())
-            target.bind("<Enter>", _on_enter)
-            target.bind("<Leave>", _on_leave)
-        canvas.tag_bind(label, "<Button-1>", lambda _e: command())
+        canvas.bind("<Button-1>", lambda _e: command())
+        canvas.bind("<Enter>", _on_enter)
+        canvas.bind("<Leave>", _on_leave)
+
         return canvas
 
     def _build_ui(self) -> None:
@@ -371,8 +376,14 @@ class LoginUI:
         card = tk.Frame(outer, bg=self.colors["card"], padx=20, pady=20)
         card.pack(fill="both", expand=True)
 
+        left_frame = tk.Frame(card, bg=self.colors["card"])
+        left_frame.pack(side="left", fill="y", padx=(0, 16))
+
+        right_frame = tk.Frame(card, bg=self.colors["card"])
+        right_frame.pack(side="right", fill="both", expand=True)
+
         title = tk.Label(
-            card,
+            left_frame,
             text="Notion ログイントークン管理",
             bg=self.colors["card"],
             fg="#2E2342",
@@ -380,63 +391,63 @@ class LoginUI:
         )
         title.pack(anchor="w", pady=(0, 14))
 
-        tk.Label(card, text="メールアドレス", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(
+        tk.Label(left_frame, text="メールアドレス", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(
             anchor="w"
         )
-        self._make_input(card, self.email_var).pack(fill="x", pady=(6, 10))
+        self._make_input(left_frame, self.email_var).pack(fill="x", pady=(6, 10))
 
-        tk.Label(card, text="パスワード", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w")
-        self._make_input(card, self.password_var, show="*").pack(fill="x", pady=(6, 10))
+        tk.Label(left_frame, text="パスワード", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w")
+        self._make_input(left_frame, self.password_var, show="*").pack(fill="x", pady=(6, 10))
 
         tk.Label(
-            card,
+            left_frame,
             text="毎日チェック時刻 (HH:MM)",
             bg=self.colors["card"],
             fg=self.colors["muted"],
             font=("Segoe UI", 10),
         ).pack(anchor="w")
-        self._make_input(card, self.check_time_var).pack(fill="x", pady=(6, 14))
+        self._make_input(left_frame, self.check_time_var).pack(fill="x", pady=(6, 14))
 
-        button_row = tk.Frame(card, bg=self.colors["card"])
+        button_row = tk.Frame(left_frame, bg=self.colors["card"])
         button_row.pack(fill="x")
-        self._make_button(button_row, "設定を保存", self.save_settings, filled=False).pack(side="left")
-        self._make_button(button_row, "今すぐトークン保存", self.save_token_now).pack(side="right")
+        self._make_button(button_row, "設定を保存", self.save_settings, width=175, filled=False).pack(side="left")
+        self._make_button(button_row, "今すぐトークン保存", self.save_token_now, width=175).pack(side="right")
 
-        self._make_button(card, "今すぐトークン確認/復旧", self.recover_now, width=440).pack(fill="x", pady=(10, 0))
+        self._make_button(left_frame, "今すぐトークン確認/復旧", self.recover_now, width=360).pack(fill="x", pady=(10, 0))
 
         status_label = tk.Label(
-            card,
+            left_frame,
             textvariable=self.status_var,
             bg=self.colors["card"],
             fg=self.colors["accent"],
-            wraplength=440,
+            wraplength=360,
             justify="left",
             font=("Segoe UI", 10),
         )
         status_label.pack(anchor="w", pady=(14, 0))
 
         token_path_label = tk.Label(
-            card,
+            left_frame,
             textvariable=self.token_path_var,
             bg=self.colors["card"],
             fg=self.colors["muted"],
-            wraplength=440,
+            wraplength=360,
             justify="left",
             font=("Segoe UI", 9),
         )
         token_path_label.pack(anchor="w", pady=(6, 0))
 
         tk.Label(
-            card,
+            right_frame,
             text="ログ",
             bg=self.colors["card"],
             fg=self.colors["muted"],
             font=("Segoe UI", 10, "bold"),
-        ).pack(anchor="w", pady=(14, 6))
+        ).pack(anchor="w", pady=(0, 6))
 
         self.log_widget = tk.Text(
-            card,
-            height=8,
+            right_frame,
+            height=30,
             bd=1,
             relief="solid",
             bg="#FAF8FD",
@@ -477,9 +488,6 @@ class LoginUI:
         self._append_log("設定保存")
 
     def save_token_now(self) -> None:
-        if not messagebox.askyesno("確認", "トークンを保存してよろしいですか？"):
-            return
-
         try:
             state = self._collect_state()
             email = state["credentials"]["email"]
