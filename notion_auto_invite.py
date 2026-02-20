@@ -25,8 +25,8 @@ class InviteTarget:
     spreadsheet_key: str
     sheet_name: str
     notion_page_url: str
-    email_column: int = 12
-    status_column: int = 13
+    email_column: int
+    status_column: int
     invited_text: str = "招待済み"
 
 
@@ -68,46 +68,72 @@ class NotionInviteService:
     def invite_guest(self, email: str, notion_page_url: str) -> None:
         cookies = self._load_token_cookies()
         driver = self._new_driver()
+        wait = WebDriverWait(driver, 30)
 
         try:
             self._login_with_token(driver, cookies)
 
             driver.get(notion_page_url)
-            time.sleep(4)
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
-            share_btn = WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.XPATH, "//*[contains(@class,'notion-topbar-share-menu')]"))
+            share_btn = wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//*[contains(@class,'notion-topbar-share-menu')]"))
             )
             driver.execute_script("arguments[0].click();", share_btn)
-            time.sleep(2)
+            wait.until(
+                EC.presence_of_element_located(
+                    (By.XPATH, "//div[@role='dialog' or @role='menu' or @data-overlay='true']")
+                )
+            )
 
-            email_input = driver.find_element(
-                By.XPATH, "//input[@placeholder='カンマで区切ったメールアドレスまたはグループ']"
+            email_input = wait.until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//input[contains(@placeholder,'メール') or contains(@placeholder,'email') or contains(@aria-label,'メール') or contains(@aria-label,'email')]",
+                    )
+                )
             )
             email_input.clear()
             email_input.send_keys(email)
-            time.sleep(2)
 
-            role_btn = driver.find_element(
-                By.XPATH,
-                "//div[@role='button'][.//span[contains(text(),'フルアクセス権限')]]",
+            role_btn = wait.until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//div[@role='button'][.//span[contains(text(),'フルアクセス権限') or contains(text(),'Can edit')]]",
+                    )
+                )
             )
             role_btn.click()
-            time.sleep(1)
-
-            view_btn = driver.find_element(
-                By.XPATH,
-                "//div[@role='menuitem']//div[contains(text(),'読み取り権限')]",
+            view_btn = wait.until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//div[@role='menuitem']//div[contains(text(),'読み取り権限') or contains(text(),'Can view')]",
+                    )
+                )
             )
             view_btn.click()
-            time.sleep(1)
-
-            invite_btn = driver.find_element(
-                By.XPATH,
-                "//div[@role='button' and contains(text(),'招待')]",
+            invite_btn = wait.until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//div[@role='button' and (contains(text(),'招待') or contains(text(),'Invite'))]",
+                    )
+                )
             )
             invite_btn.click()
-            time.sleep(2)
+
+            wait.until(
+                EC.any_of(
+                    EC.text_to_be_present_in_element(
+                        (By.XPATH, "//div[@role='button']"),
+                        "招待済み",
+                    ),
+                    EC.invisibility_of_element(invite_btn),
+                )
+            )
 
         finally:
             driver.quit()
@@ -119,12 +145,25 @@ def load_targets(config_path: Path) -> Dict[str, InviteTarget]:
 
     targets: Dict[str, InviteTarget] = {}
     for name, cfg in raw.items():
+        email_column = cfg.get("email_column")
+        status_column = cfg.get("status_column")
+
+        if email_column is None or status_column is None:
+            raise ValueError(
+                f"{name}: email_column/status_column は必須です。元システムの列定義を設定してください。"
+            )
+
+        if int(email_column) < 1 or int(status_column) < 1:
+            raise ValueError(f"{name}: email_column/status_column は 1 以上で指定してください。")
+
+        if int(email_column) == int(status_column):
+            raise ValueError(f"{name}: email_column と status_column は同じ列にできません。")
         targets[name] = InviteTarget(
             spreadsheet_key=cfg["spreadsheet_key"],
             sheet_name=cfg.get("sheet_name", "シート1"),
             notion_page_url=cfg["notion_page_url"],
-            email_column=cfg.get("email_column", 12),
-            status_column=cfg.get("status_column", 13),
+            email_column=int(email_column),
+            status_column=int(status_column),
             invited_text=cfg.get("invited_text", "招待済み"),
         )
     return targets
