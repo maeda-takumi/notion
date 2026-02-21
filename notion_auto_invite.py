@@ -34,6 +34,31 @@ class InviteTarget:
     status_column: int
     invited_text: str = "招待済み"
 
+def parse_scheduled_datetime(date_str: str, time_str: str) -> Optional[datetime]:
+    date_str = (date_str or "").strip()
+    time_str = (time_str or "").strip()
+
+    if not date_str or not time_str:
+        return None
+
+    patterns = [
+        "%Y/%m/%d %H:%M",
+        "%Y-%m-%d %H:%M",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H時%M分",
+    ]
+
+    dt_text = f"{date_str} {time_str}"
+    for pattern in patterns:
+        try:
+            return datetime.strptime(dt_text, pattern)
+        except ValueError:
+            continue
+
+    return None
+
+
 
 class NotionInviteService:
     def __init__(self, state_file: Path) -> None:
@@ -211,6 +236,7 @@ def process_target(
     data = sheet.get_all_values()
     email_idx = target.email_column - 1
     status_idx = target.status_column - 1
+    is_week1 = target_name.strip().casefold() == "week1"
     invited_count = 0
 
     for row_index in range(1, len(data)):
@@ -220,6 +246,17 @@ def process_target(
 
         if not email or status == target.invited_text:
             continue
+
+        if is_week1:
+            date_str = row[0] if len(row) > 0 else ""
+            time_str = row[1] if len(row) > 1 else ""
+            scheduled_dt = parse_scheduled_datetime(date_str, time_str)
+            if scheduled_dt is not None and datetime.now() < scheduled_dt:
+                if log_callback:
+                    log_callback(
+                        f"{target_name}: スキップ（未到来） row={row_index + 1}, email={email}, scheduled={scheduled_dt.strftime('%Y-%m-%d %H:%M')}"
+                    )
+                continue
 
         if log_callback:
             log_callback(f"{target_name}: 招待処理開始 row={row_index + 1}, email={email}")
