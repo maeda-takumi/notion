@@ -4,6 +4,8 @@ import sys
 import threading
 import time
 import traceback
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +22,8 @@ from tkinter import messagebox
 from webdriver_manager.chrome import ChromeDriverManager
 LOGIN_URL = "https://www.notion.so/login"
 SOURCE_SPREADSHEET_KEY = "1OZMS0_7l4oum7JtIZR2WKoqb8-YNB4cBffrD9dcMGjc"
+CHATWORK_API_TOKEN = "fee574510c5ce22d78b85282a0a8acaa"
+CHATWORK_ROOM_ID = "420768122"
 
 
 def resource_path(relative_path: str) -> Path:
@@ -39,6 +43,36 @@ class InviteTarget:
 class PendingInvite:
     row_index: int
     email: str
+    name: str
+    scheduled_datetime: Optional[datetime]
+
+
+def send_chatwork_notification(invite: PendingInvite) -> None:
+    notified_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        "[toall]",
+        "Notion招待が完了しました。",
+        f"通知したメアド: {invite.email}",
+        f"通知した名前: {invite.name or '（未設定）'}",
+        f"通知した日時: {notified_at}",
+    ]
+
+    if invite.scheduled_datetime is not None:
+        lines.append(f"通知指定時刻: {invite.scheduled_datetime.strftime('%Y-%m-%d %H:%M')}")
+    else:
+        lines.append("通知指定時刻: なし")
+
+    payload = urllib.parse.urlencode({"body": "\n".join(lines)}).encode("utf-8")
+    request = urllib.request.Request(
+        url=f"https://api.chatwork.com/v2/rooms/{CHATWORK_ROOM_ID}/messages",
+        data=payload,
+        headers={"X-ChatWorkToken": CHATWORK_API_TOKEN},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request, timeout=10):
+        pass
+
 
 def parse_scheduled_datetime(date_str: str, time_str: str) -> Optional[datetime]:
     date_str = (date_str or "").strip()
@@ -262,11 +296,24 @@ def collect_pending_invites(
                         f"{target_name}: スキップ（未到来） row={row_index + 1}, email={email}, scheduled={scheduled_dt.strftime('%Y-%m-%d %H:%M')}"
                     )
                 continue
+        else:
+            scheduled_dt = None
+
+        name = row[3].strip() if len(row) > 3 else ""
 
         if log_callback:
             log_callback(f"{target_name}: 招待候補 row={row_index + 1}, email={email}")
 
-        pending_invites.append(PendingInvite(row_index=row_index + 1, email=email))
+        pending_invites.append(
+            PendingInvite(
+                row_index=row_index + 1,
+                email=email,
+                name=name,
+                scheduled_datetime=scheduled_dt,
+            )
+        )
+
+    return sheet, pending_invites
 
 
 def invite_emails_to_all_notions(
@@ -334,6 +381,7 @@ def process_all_targets(
 
     for pending in pending_invites:
         sheet.update_cell(pending.row_index, source.status_column, source.invited_text)
+        send_chatwork_notification(pending)
         if log_callback:
             log_callback(f"{source_target_name}: ステータス更新 row={pending.row_index}, email={pending.email}")
 
