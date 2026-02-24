@@ -748,28 +748,6 @@ def parse_args() -> argparse.Namespace:
 
 
 
-def run_single_target(args: argparse.Namespace) -> None:
-    if args.target is None:
-        raise ValueError("単発実行では target の指定が必要です。UI を使う場合は --ui を付けてください。")
-
-    targets = load_targets(Path(args.config))
-
-    if args.target not in targets:
-        available = ", ".join(sorted(targets.keys()))
-        raise ValueError(f"不明な target: {args.target}. 利用可能: {available}")
-
-    service = NotionInviteService(state_file=Path(args.state_file))
-    try:
-        invited = process_target(
-            service=service,
-            credentials_path=Path(args.credentials),
-            target_name=args.target,
-            target=targets[args.target],
-        )
-        print(f"処理完了: target={args.target}, invited={invited}")
-    finally:
-        service.close_driver()
-
 
 def run_ui(state_file: Path) -> None:
     root = tk.Tk()
@@ -783,7 +761,6 @@ def main() -> None:
     if args.ui or args.target is None:
         run_ui(state_file=Path(args.state_file))
         return
-    run_single_target(args)
 
 
 if __name__ == "__main__":
