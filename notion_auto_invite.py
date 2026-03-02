@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 import gspread
 import tkinter as tk
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -122,7 +122,19 @@ class NotionInviteService:
         return cookies
 
     def _new_driver(self) -> webdriver.Chrome:
-        return webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+        options = webdriver.ChromeOptions()
+        options.add_argument("--start-maximized")
+
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=options,
+        )
+        try:
+            driver.maximize_window()
+        except Exception:
+            # 実行環境によっては最大化できないことがあるため、失敗時は継続する。
+            pass
+        return driver
     def _get_driver(self) -> webdriver.Chrome:
         if self._driver is None:
             self._driver = self._new_driver()
@@ -137,6 +149,39 @@ class NotionInviteService:
                 pass
         self._driver = None
         self._is_logged_in = False
+
+    def _wait_for_blocking_overlay_to_disappear(self, wait: WebDriverWait) -> None:
+        """全画面オーバーレイが表示されている間はクリックを待機する。"""
+        overlay_xpath = (
+            "//div[@aria-hidden='true' and @tabindex='-1' and "
+            "contains(@style,'position: fixed') and contains(@style,'width: 100vw') and "
+            "contains(@style,'height: 100vh')]"
+        )
+        try:
+            wait.until(EC.invisibility_of_element_located((By.XPATH, overlay_xpath)))
+        except TimeoutException:
+            # オーバーレイを検出できない/消えないケースでも処理は継続する。
+            pass
+
+    def _click_with_retry(self, wait: WebDriverWait, by: By, selector: str) -> None:
+        """UI 遷移中の一時的なクリック阻害を考慮してクリックする。"""
+        last_error: Optional[Exception] = None
+        for _ in range(3):
+            self._wait_for_blocking_overlay_to_disappear(wait)
+            target = wait.until(EC.element_to_be_clickable((by, selector)))
+            try:
+                target.click()
+                return
+            except ElementClickInterceptedException as e:
+                last_error = e
+                # クリック直前にオーバーレイが被ることがあるため、JS click で救済する。
+                self._wait_for_blocking_overlay_to_disappear(wait)
+                self._get_driver().execute_script("arguments[0].click();", target)
+                return
+
+        if last_error is not None:
+            raise last_error
+
 
     def close_driver(self) -> None:
         self._reset_driver()
@@ -207,24 +252,12 @@ class NotionInviteService:
             )
         )
         driver.execute_script("arguments[0].click();", view_menu_item)
-        next_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//div[@role='button' and (contains(.,'次へ') or contains(.,'Next'))]",
-                )
-            )
-        )
-        next_btn.click()
-        invite_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//div[@role='button' and (contains(.,'招待する') or contains(.,'Invite'))]",
-                )
-            )
-        )
-        invite_btn.click()
+        next_btn_xpath = "//div[@role='button' and (contains(.,'次へ') or contains(.,'Next'))]"
+        self._click_with_retry(wait, By.XPATH, next_btn_xpath)
+
+        invite_btn_xpath = "//div[@role='button' and (contains(.,'招待する') or contains(.,'Invite'))]"
+        self._click_with_retry(wait, By.XPATH, invite_btn_xpath)
+        invite_btn = wait.until(EC.presence_of_element_located((By.XPATH, invite_btn_xpath)))
 
         # 招待完了トーストは短時間で消えるため、捕捉できなくても失敗にしない。
         try:
