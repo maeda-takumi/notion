@@ -337,78 +337,64 @@ def collect_pending_invites(
     return sheet, pending_invites
 
 
-def invite_emails_to_all_notions(
-    service: NotionInviteService,
-    emails: List[str],
-    targets: Dict[str, InviteTarget],
-    log_callback: Optional[Callable[[str], None]] = None,
-) -> None:
-    unique_emails = list(dict.fromkeys(emails))
-    unique_notion_urls = list(dict.fromkeys(t.notion_page_url for t in targets.values()))
-
-    for notion_page_url in unique_notion_urls:
-        if log_callback:
-            log_callback(f"Notion招待開始: notion={notion_page_url}, 対象数={len(unique_emails)}")
-
-        for email in unique_emails:
-            service.invite_guest(email=email, notion_page_url=notion_page_url)
-
-        if log_callback:
-            log_callback(f"Notion招待完了: notion={notion_page_url}")
-
-
 def process_all_targets(
     service: NotionInviteService,
     credentials_path: Path,
     targets: Dict[str, InviteTarget],
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> int:
-    source_target = next(
-        (
-            (target_name, target)
-            for target_name, target in targets.items()
-            if target.spreadsheet_key == SOURCE_SPREADSHEET_KEY
-        ),
-        None,
-    )
+    total_invited = 0
 
-    if source_target is None:
-        raise ValueError(
-            f"招待元シートが見つかりません。spreadsheet_key={SOURCE_SPREADSHEET_KEY} を設定してください。"
+    for target_name, target in targets.items():
+        if log_callback:
+            log_callback(f"{target_name}: 処理開始")
+        sheet, pending_invites = collect_pending_invites(
+            credentials_path=credentials_path,
+            target_name=target_name,
+            target=target,
+            log_callback=log_callback,
         )
 
-    source_target_name, source = source_target
-    if log_callback:
-        log_callback(f"{source_target_name}: 招待元シート処理を開始")
+        if not pending_invites:
+            if log_callback:
+                log_callback(f"{target_name}: 招待対象なし")
+            continue
 
-    sheet, pending_invites = collect_pending_invites(
-        credentials_path=credentials_path,
-        target_name=source_target_name,
-        target=source,
-        log_callback=log_callback,
-    )
-
-    if not pending_invites:
+        unique_emails = list(dict.fromkeys(pending.email for pending in pending_invites))
         if log_callback:
-            log_callback(f"{source_target_name}: 招待対象なし")
-        return 0
+            log_callback(f"{target_name}: Notion招待開始 notion={target.notion_page_url}, 対象数={len(unique_emails)}")
 
-    invite_emails_to_all_notions(
+        for email in unique_emails:
+            service.invite_guest(email=email, notion_page_url=target.notion_page_url)
+
+        if log_callback:
+            log_callback(f"{target_name}: Notion招待完了")
+
+        for pending in pending_invites:
+            sheet.update_cell(pending.row_index, target.status_column, target.invited_text)
+            send_chatwork_notification(pending)
+            if log_callback:
+                log_callback(f"{target_name}: ステータス更新 row={pending.row_index}, email={pending.email}")
+
+        total_invited += len(pending_invites)
+        if log_callback:
+            log_callback(f"{target_name}: 処理完了 (招待数={len(pending_invites)})")
+
+    return total_invited
+
+def process_single_target(
+    service: NotionInviteService,
+    credentials_path: Path,
+    target_name: str,
+    target: InviteTarget,
+    log_callback: Optional[Callable[[str], None]] = None,
+) -> int:
+    return process_all_targets(
         service=service,
-        emails=[pending.email for pending in pending_invites],
-        targets=targets,
+        credentials_path=credentials_path,
+        targets={target_name: target},
         log_callback=log_callback,
     )
-
-    for pending in pending_invites:
-        sheet.update_cell(pending.row_index, source.status_column, source.invited_text)
-        send_chatwork_notification(pending)
-        if log_callback:
-            log_callback(f"{source_target_name}: ステータス更新 row={pending.row_index}, email={pending.email}")
-
-    if log_callback:
-        log_callback(f"{source_target_name}: 招待元シート処理完了 (招待数={len(pending_invites)})")
-    return len(pending_invites)
 
 
 def run_polling(
@@ -836,6 +822,28 @@ def main() -> None:
     if args.ui or args.target is None:
         run_ui(state_file=Path(args.state_file))
         return
+
+    config_path = Path(args.config)
+    credentials_path = Path(args.credentials)
+    state_file = Path(args.state_file)
+
+    targets = load_targets(config_path)
+    target = targets.get(args.target)
+    if target is None:
+        raise ValueError(f"指定した target が見つかりません: {args.target}")
+
+    service = NotionInviteService(state_file=state_file)
+    try:
+        invited_count = process_single_target(
+            service=service,
+            credentials_path=credentials_path,
+            target_name=args.target,
+            target=target,
+            log_callback=print,
+        )
+        print(f"単発実行完了: target={args.target}, 招待数={invited_count}")
+    finally:
+        service.close_driver()
 
 
 if __name__ == "__main__":
