@@ -831,7 +831,13 @@ def run_ui(state_file: Path) -> None:
     root = tk.Tk()
     service = NotionInviteService(state_file=state_file)
     InvitePollingUI(root, service)
-    root.mainloop()
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        service.close_driver()
+        if root.winfo_exists():
+            root.destroy()
+
 
 
 def main() -> None:
