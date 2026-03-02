@@ -216,15 +216,6 @@ class NotionInviteService:
             )
         )
         next_btn.click()
-        next_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//div[@role='button' and (contains(.,'招待する') or contains(.,'Invite'))]",
-                )
-            )
-        )
-        next_btn.click()
         invite_btn = wait.until(
             EC.element_to_be_clickable(
                 (
