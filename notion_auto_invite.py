@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 import gspread
 import tkinter as tk
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -191,39 +192,68 @@ class NotionInviteService:
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
-                    "//div[@role='button'][.//span[contains(text(),'フルアクセス権限') or contains(text(),'Can edit')]]",
+                    "//div[@role='button'][.//*[contains(.,'フルアクセス権限') or contains(.,'Can edit')]]",
                 )
             )
         )
         role_btn.click()
-        view_btn = wait.until(
-            EC.element_to_be_clickable(
+
+        view_menu_item = wait.until(
+            EC.presence_of_element_located(
                 (
                     By.XPATH,
-                    "//div[@role='menuitem']//div[contains(text(),'読み取り権限') or contains(text(),'Can view')]",
+                    "//div[@role='menuitem'][.//*[contains(.,'読み取り権限') or contains(.,'Can view')]]",
                 )
             )
         )
-        view_btn.click()
+        driver.execute_script("arguments[0].click();", view_menu_item)
+        next_btn = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//div[@role='button' and (contains(.,'次へ') or contains(.,'Next'))]",
+                )
+            )
+        )
+        next_btn.click()
+        next_btn = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//div[@role='button' and (contains(.,'招待する') or contains(.,'Invite'))]",
+                )
+            )
+        )
+        next_btn.click()
         invite_btn = wait.until(
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
-                    "//div[@role='button' and (contains(text(),'招待') or contains(text(),'Invite'))]",
+                    "//div[@role='button' and (contains(.,'招待する') or contains(.,'Invite'))]",
                 )
             )
         )
         invite_btn.click()
 
-        wait.until(
-            EC.any_of(
-                EC.text_to_be_present_in_element(
-                    (By.XPATH, "//div[@role='button']"),
-                    "招待済み",
-                ),
-                EC.invisibility_of_element(invite_btn),
+        # 招待完了トーストは短時間で消えるため、捕捉できなくても失敗にしない。
+        try:
+            wait.until(
+                EC.any_of(
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            "//div[contains(.,'に招待を送信しました')]",
+                        )
+                    ),
+                    EC.text_to_be_present_in_element(
+                        (By.XPATH, "//div[@role='button']"),
+                        "招待済み",
+                    ),
+                    EC.invisibility_of_element(invite_btn),
+                )
             )
-        )
+        except TimeoutException:
+            pass
 
     def invite_guest(self, email: str, notion_page_url: str) -> None:
         try:
