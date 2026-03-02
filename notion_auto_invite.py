@@ -257,27 +257,6 @@ class NotionInviteService:
 
         invite_btn_xpath = "//div[@role='button' and (contains(.,'招待する') or contains(.,'Invite'))]"
         self._click_with_retry(wait, By.XPATH, invite_btn_xpath)
-        invite_btn = wait.until(EC.presence_of_element_located((By.XPATH, invite_btn_xpath)))
-
-        # 招待完了トーストは短時間で消えるため、捕捉できなくても失敗にしない。
-        try:
-            wait.until(
-                EC.any_of(
-                    EC.presence_of_element_located(
-                        (
-                            By.XPATH,
-                            "//div[contains(.,'に招待を送信しました')]",
-                        )
-                    ),
-                    EC.text_to_be_present_in_element(
-                        (By.XPATH, "//div[@role='button']"),
-                        "招待済み",
-                    ),
-                    EC.invisibility_of_element(invite_btn),
-                )
-            )
-        except TimeoutException:
-            pass
 
     def invite_guest(self, email: str, notion_page_url: str) -> None:
         try:
