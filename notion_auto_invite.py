@@ -48,10 +48,22 @@ class PendingInvite:
     scheduled_datetime: Optional[datetime]
 
 
+def _post_chatwork_message(lines: List[str]) -> None:
+    payload = urllib.parse.urlencode({"body": "\n".join(lines)}).encode("utf-8")
+    request = urllib.request.Request(
+        url=f"https://api.chatwork.com/v2/rooms/{CHATWORK_ROOM_ID}/messages",
+        data=payload,
+        headers={"X-ChatWorkToken": CHATWORK_API_TOKEN},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request, timeout=10):
+        pass
+
 def send_chatwork_notification(invite: PendingInvite) -> None:
     notified_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines = [
-        "[toall]",
+        "",
         "Notion招待が完了しました。",
         f"通知したメアド: {invite.email}",
         f"通知した名前: {invite.name or '（未設定）'}",
@@ -63,16 +75,33 @@ def send_chatwork_notification(invite: PendingInvite) -> None:
     else:
         lines.append("通知指定時刻: なし")
 
-    payload = urllib.parse.urlencode({"body": "\n".join(lines)}).encode("utf-8")
-    request = urllib.request.Request(
-        url=f"https://api.chatwork.com/v2/rooms/{CHATWORK_ROOM_ID}/messages",
-        data=payload,
-        headers={"X-ChatWorkToken": CHATWORK_API_TOKEN},
-        method="POST",
-    )
+    _post_chatwork_message(lines)
 
-    with urllib.request.urlopen(request, timeout=10):
-        pass
+def send_chatwork_group_notification(target_name: str, invites: List[PendingInvite]) -> None:
+    if not invites:
+        return
+
+    notified_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        "",
+        f"{target_name}: Notion招待が完了しました。",
+        f"通知件数: {len(invites)}件",
+        f"通知日時: {notified_at}",
+        "",
+        "対象一覧:",
+    ]
+
+    for index, invite in enumerate(invites, start=1):
+        if invite.scheduled_datetime is not None:
+            scheduled_text = invite.scheduled_datetime.strftime("%Y-%m-%d %H:%M")
+        else:
+            scheduled_text = "なし"
+
+        lines.append(
+            f"{index}. {invite.email} / {invite.name or '（未設定）'} / 通知指定時刻: {scheduled_text}"
+        )
+
+    _post_chatwork_message(lines)
 
 
 def parse_scheduled_datetime(date_str: str, time_str: str) -> Optional[datetime]:
@@ -373,9 +402,11 @@ def process_all_targets(
 
         for pending in pending_invites:
             sheet.update_cell(pending.row_index, target.status_column, target.invited_text)
-            send_chatwork_notification(pending)
             if log_callback:
                 log_callback(f"{target_name}: ステータス更新 row={pending.row_index}, email={pending.email}")
+        send_chatwork_group_notification(target_name, pending_invites)
+        if log_callback:
+            log_callback(f"{target_name}: Chatwork通知完了 (通知件数={len(pending_invites)})")
 
         total_invited += len(pending_invites)
         if log_callback:

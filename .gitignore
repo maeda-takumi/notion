@@ -5,3 +5,10 @@
 notion_login_state.json
 __pycache__/
 *.pyc
+dist
+build
+*.toc
+*.zip
+dist/*
+build/*
+*.exe
