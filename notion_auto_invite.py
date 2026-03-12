@@ -223,16 +223,21 @@ class NotionInviteService:
             " or contains(normalize-space(.),'権限'))])[1]"
         )
         read_only_menu_item_xpath = (
-            "//div[@role='menuitem'][.//*[contains(normalize-space(.),'読み取り権限')]"
-            " or contains(normalize-space(.),'読み取り権限')]"
+            "//div[@role='menuitem' and .//div[normalize-space(.)='読み取り権限']]"
         )
 
         role_btn = wait.until(EC.element_to_be_clickable((By.XPATH, role_btn_xpath)))
         driver.execute_script("arguments[0].click();", role_btn)
 
-        view_menu_item = wait.until(
-            EC.element_to_be_clickable((By.XPATH, read_only_menu_item_xpath))
-        )
+        def _find_visible_read_only_menu_item(_: webdriver.Chrome):
+            menu_items = driver.find_elements(By.XPATH, read_only_menu_item_xpath)
+            for item in menu_items:
+                if item.is_displayed() and item.is_enabled():
+                    return item
+            return False
+
+        view_menu_item = wait.until(_find_visible_read_only_menu_item)
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", view_menu_item)
         driver.execute_script("arguments[0].click();", view_menu_item)
 
         def _is_read_only_selected(_: webdriver.Chrome) -> bool:
