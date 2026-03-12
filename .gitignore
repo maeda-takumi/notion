@@ -12,3 +12,7 @@ build
 dist/*
 build/*
 *.exe
+/dist/*
+/build/*
+*.zip
+*.toc
