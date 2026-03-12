@@ -251,6 +251,20 @@ class NotionInviteService:
         email_input.clear()
         email_input.send_keys(email)
 
+        invite_btn_xpath = (
+            "(//div[@role='button' and (contains(.,'招待') or contains(.,'Invite'))]"
+            " | //button[contains(.,'招待') or contains(.,'Invite')])[1]"
+        )
+
+        # 新UIではメール入力後に「招待する」ボタンを押すだけで完了する。
+        # 旧UIの権限選択フローも残っているため、まず新UIを優先して試す。
+        try:
+            quick_wait = WebDriverWait(driver, 3)
+            self._click_with_retry(quick_wait, By.XPATH, invite_btn_xpath)
+            return
+        except Exception:
+            pass
+        
         role_btn = wait.until(
             EC.element_to_be_clickable(
                 (
@@ -273,7 +287,6 @@ class NotionInviteService:
         next_btn_xpath = "//div[@role='button' and (contains(.,'次へ') or contains(.,'Next'))]"
         self._click_with_retry(wait, By.XPATH, next_btn_xpath)
 
-        invite_btn_xpath = "//div[@role='button' and (contains(.,'招待する') or contains(.,'Invite'))]"
         self._click_with_retry(wait, By.XPATH, invite_btn_xpath)
 
     def invite_guest(self, email: str, notion_page_url: str) -> None:
