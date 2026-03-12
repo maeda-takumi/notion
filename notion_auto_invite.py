@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 import gspread
 import tkinter as tk
 from selenium import webdriver
-from selenium.common.exceptions import ElementClickInterceptedException
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -200,6 +200,19 @@ class NotionInviteService:
         if last_error is not None:
             raise last_error
 
+    def _click_if_present(self, by: By, selector: str, timeout: float = 2.0) -> bool:
+        """短時間だけ待機して要素があればクリックする。"""
+        wait = WebDriverWait(self._get_driver(), timeout)
+        try:
+            target = wait.until(EC.presence_of_element_located((by, selector)))
+        except TimeoutException:
+            return False
+
+        try:
+            target.click()
+        except Exception:
+            self._get_driver().execute_script("arguments[0].click();", target)
+        return True
 
     def close_driver(self) -> None:
         self._reset_driver()
@@ -261,22 +274,23 @@ class NotionInviteService:
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
-                    "//div[@role='button'][.//*[contains(.,'フルアクセス権限') or contains(.,'Can edit') or contains(.,'編集可') or contains(.,'Full access')]]",
+                    "//div[@role='button'][.//*[contains(.,'フルアクセス権限') or contains(.,'Can edit')]]",
                 )
             )
         )
-        driver.execute_script("arguments[0].click();", role_btn)
+        role_btn.click()
 
         view_menu_item = wait.until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
-                    "//div[@role='menuitem'][.//*[contains(.,'読み取り権限') or contains(.,'Can view') or contains(.,'閲覧可')]]",
+                    "//div[@role='menuitem'][.//*[contains(.,'読み取り権限') or contains(.,'Can view')]]",
                 )
             )
         )
         driver.execute_script("arguments[0].click();", view_menu_item)
         next_btn_xpath = "//div[@role='button' and (contains(.,'次へ') or contains(.,'Next'))]"
+        self._click_if_present(By.XPATH, next_btn_xpath)
         self._click_with_retry(wait, By.XPATH, next_btn_xpath)
 
         self._click_with_retry(wait, By.XPATH, invite_btn_xpath)
