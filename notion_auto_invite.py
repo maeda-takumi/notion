@@ -226,29 +226,47 @@ class NotionInviteService:
             "//div[@role='menuitem' and .//div[normalize-space(.)='読み取り権限']]"
         )
 
-        role_btn = wait.until(EC.element_to_be_clickable((By.XPATH, role_btn_xpath)))
-        driver.execute_script("arguments[0].click();", role_btn)
+        def _open_role_menu() -> None:
+            role_btn = wait.until(EC.element_to_be_clickable((By.XPATH, role_btn_xpath)))
+            driver.execute_script("arguments[0].click();", role_btn)
 
-        def _find_visible_read_only_menu_item(_: webdriver.Chrome):
+        def _find_visible_read_only_menu_items(_: webdriver.Chrome):
             menu_items = driver.find_elements(By.XPATH, read_only_menu_item_xpath)
-            for item in menu_items:
-                if item.is_displayed() and item.is_enabled():
-                    return item
-            return False
+            visible_items = [item for item in menu_items if item.is_displayed() and item.is_enabled()]
 
-        view_menu_item = wait.until(_find_visible_read_only_menu_item)
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", view_menu_item)
-        driver.execute_script("arguments[0].click();", view_menu_item)
+            print(
+                "読み取り権限の候補数: "
+                f"total={len(menu_items)}, visible={len(visible_items)}"
+            )
 
-        def _is_read_only_selected(_: webdriver.Chrome) -> bool:
+            return visible_items if visible_items else False
+
+        def _is_read_only_selected() -> bool:
             try:
                 selected_role = driver.find_element(By.XPATH, role_btn_xpath)
                 return "読み取り権限" in selected_role.text
             except Exception:
                 return False
 
-        if not WebDriverWait(driver, 5).until(_is_read_only_selected):
-            raise RuntimeError("権限を『読み取り権限』に変更できなかったため招待を中止します。")
+        _open_role_menu()
+        visible_items = wait.until(_find_visible_read_only_menu_items)
+
+        for index in range(len(visible_items)):
+            if index > 0:
+                _open_role_menu()
+                visible_items = wait.until(_find_visible_read_only_menu_items)
+
+            if index >= len(visible_items):
+                continue
+
+            view_menu_item = visible_items[index]
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", view_menu_item)
+            driver.execute_script("arguments[0].click();", view_menu_item)
+
+            if WebDriverWait(driver, 3).until(lambda _: _is_read_only_selected()):
+                return
+
+        raise RuntimeError("権限を『読み取り権限』に変更できなかったため招待を中止します。")
         
     def close_driver(self) -> None:
         self._reset_driver()
