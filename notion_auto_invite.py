@@ -214,6 +214,37 @@ class NotionInviteService:
             self._get_driver().execute_script("arguments[0].click();", target)
         return True
 
+    def _set_read_only_permission(self, wait: WebDriverWait) -> None:
+        """招待前の権限ドロップダウンで「読み取り権限」を選択・検証する。"""
+        driver = self._get_driver()
+        role_btn_xpath = (
+            "(//div[@role='button' and @aria-haspopup='dialog'"
+            " and (.//*[contains(normalize-space(.),'権限')]"
+            " or contains(normalize-space(.),'権限'))])[1]"
+        )
+        read_only_menu_item_xpath = (
+            "//div[@role='menuitem'][.//*[contains(normalize-space(.),'読み取り権限')]"
+            " or contains(normalize-space(.),'読み取り権限')]"
+        )
+
+        role_btn = wait.until(EC.element_to_be_clickable((By.XPATH, role_btn_xpath)))
+        driver.execute_script("arguments[0].click();", role_btn)
+
+        view_menu_item = wait.until(
+            EC.element_to_be_clickable((By.XPATH, read_only_menu_item_xpath))
+        )
+        driver.execute_script("arguments[0].click();", view_menu_item)
+
+        def _is_read_only_selected(_: webdriver.Chrome) -> bool:
+            try:
+                selected_role = driver.find_element(By.XPATH, role_btn_xpath)
+                return "読み取り権限" in selected_role.text
+            except Exception:
+                return False
+
+        if not WebDriverWait(driver, 5).until(_is_read_only_selected):
+            raise RuntimeError("権限を『読み取り権限』に変更できなかったため招待を中止します。")
+        
     def close_driver(self) -> None:
         self._reset_driver()
 
@@ -270,28 +301,7 @@ class NotionInviteService:
         )
 
         
-        role_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//div[@role='button'][.//*[contains(.,'フルアクセス権限') or contains(.,'Can edit')]]",
-                )
-            )
-        )
-        role_btn.click()
-
-        view_menu_item = wait.until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    "//div[@role='menuitem'][.//*[contains(.,'読み取り権限') or contains(.,'Can view')]]",
-                )
-            )
-        )
-        driver.execute_script("arguments[0].click();", view_menu_item)
-        next_btn_xpath = "//div[@role='button' and (contains(.,'次へ') or contains(.,'Next'))]"
-        self._click_if_present(By.XPATH, next_btn_xpath)
-        self._click_with_retry(wait, By.XPATH, next_btn_xpath)
+        self._set_read_only_permission(wait)
 
         self._click_with_retry(wait, By.XPATH, invite_btn_xpath)
 
