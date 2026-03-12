@@ -256,30 +256,22 @@ class NotionInviteService:
             " | //button[contains(.,'招待') or contains(.,'Invite')])[1]"
         )
 
-        # 新UIではメール入力後に「招待する」ボタンを押すだけで完了する。
-        # 旧UIの権限選択フローも残っているため、まず新UIを優先して試す。
-        try:
-            quick_wait = WebDriverWait(driver, 3)
-            self._click_with_retry(quick_wait, By.XPATH, invite_btn_xpath)
-            return
-        except Exception:
-            pass
         
         role_btn = wait.until(
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
-                    "//div[@role='button'][.//*[contains(.,'フルアクセス権限') or contains(.,'Can edit')]]",
+                    "//div[@role='button'][.//*[contains(.,'フルアクセス権限') or contains(.,'Can edit') or contains(.,'編集可') or contains(.,'Full access')]]",
                 )
             )
         )
-        role_btn.click()
+        driver.execute_script("arguments[0].click();", role_btn)
 
         view_menu_item = wait.until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
-                    "//div[@role='menuitem'][.//*[contains(.,'読み取り権限') or contains(.,'Can view')]]",
+                    "//div[@role='menuitem'][.//*[contains(.,'読み取り権限') or contains(.,'Can view') or contains(.,'閲覧可')]]",
                 )
             )
         )
