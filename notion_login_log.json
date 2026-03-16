@@ -58,5 +58,17 @@
   {
     "timestamp": "2026-03-02T10:32:27.772839",
     "message": "保存トークン: C:\\Users\\User\\Desktop\\00開発\\22Notion自動招待\\project\\notion_login_state.json"
+  },
+  {
+    "timestamp": "2026-03-12T12:06:38.104441",
+    "message": "実行開始"
+  },
+  {
+    "timestamp": "2026-03-12T12:06:59.048002",
+    "message": "保存完了"
+  },
+  {
+    "timestamp": "2026-03-12T12:06:59.061040",
+    "message": "保存トークン: C:\\Users\\User\\Desktop\\00開発\\22Notion自動招待\\project\\notion_login_state.json"
   }
 ]

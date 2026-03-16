@@ -223,7 +223,7 @@ class NotionInviteService:
             " or contains(normalize-space(.),'権限'))])[1]"
         )
         read_only_menu_item_xpath = (
-            "//div[@role='menuitem' and .//div[normalize-space(.)='読み取り権限']]"
+            ".//div[@role='menuitem' and .//div[normalize-space(.)='読み取り権限']]"
         )
 
         def _open_role_menu() -> None:
@@ -231,7 +231,21 @@ class NotionInviteService:
             driver.execute_script("arguments[0].click();", role_btn)
 
         def _find_visible_read_only_menu_items(_: webdriver.Chrome):
-            menu_items = driver.find_elements(By.XPATH, read_only_menu_item_xpath)
+            role_select_roots = driver.find_elements(
+                By.XPATH,
+                "//div[contains(@class, 'notion-sharing-permission-role-select')]",
+            )
+
+            menu_items = []
+            for root in role_select_roots:
+                if not root.is_displayed():
+                    continue
+
+                menus = root.find_elements(By.XPATH, ".//div[@role='menu']")
+                for menu in menus:
+                    if not menu.is_displayed():
+                        continue
+                    menu_items.extend(menu.find_elements(By.XPATH, read_only_menu_item_xpath))
             visible_items = [item for item in menu_items if item.is_displayed() and item.is_enabled()]
 
             print(
@@ -263,8 +277,11 @@ class NotionInviteService:
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", view_menu_item)
             driver.execute_script("arguments[0].click();", view_menu_item)
 
-            if WebDriverWait(driver, 3).until(lambda _: _is_read_only_selected()):
-                return
+            try:
+                if WebDriverWait(driver, 3).until(lambda _: _is_read_only_selected()):
+                    return
+            except TimeoutException:
+                print("読み取り権限への変更確認がタイムアウトしたため、別候補を試します。")
 
         raise RuntimeError("権限を『読み取り権限』に変更できなかったため招待を中止します。")
         
