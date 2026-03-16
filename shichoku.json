@@ -1,0 +1,17 @@
+{
+  "shinchoku": {
+    "spreadsheet_key": "1p3Fh3K4ycOP5i_ttK5Yf4IaLGHzyaLvY0ThJCniM0xc",
+    "sheet_name": "ChatGPT",
+    "week1_week2_column": 12,
+    "week2_week3_column": 14,
+    "week3_week4_column": 16,
+    "week4_week5_column": 18,
+    "week5_week6_column": 20,
+    "week6_week7_column": 22,
+    "week7_week8_column": 24,
+    "week8_week9_column": 26,
+    "week9_week10_column": 28,
+    "week10_week11_column": 31,
+    "week11_week12_column": 32
+  }
+}
