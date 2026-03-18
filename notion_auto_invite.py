@@ -1,9 +1,11 @@
 import argparse
 import json
+import re
 import sys
 import threading
 import time
 import traceback
+import unicodedata
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -45,8 +47,75 @@ class PendingInvite:
     row_index: int
     email: str
     name: str
+    line_name: str
     scheduled_datetime: Optional[datetime]
 
+@dataclass
+class ShinchokuTarget:
+    spreadsheet_key: str
+    sheet_name: str
+    name_column: Optional[int]
+    status_columns: Dict[str, int]
+
+
+def _normalize_line_name(value: str) -> str:
+    text = unicodedata.normalize("NFKC", (value or "")).casefold()
+    text = re.sub(r"[\s\u00a0\u200b\ufeff]+", "", text)
+    return text
+
+
+def load_shinchoku_target(config_path: Path) -> Optional[ShinchokuTarget]:
+    if not config_path.exists():
+        return None
+
+    with config_path.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    cfg = raw.get("shinchoku") or raw.get("shichoku")
+    if not cfg:
+        return None
+
+    status_columns: Dict[str, int] = {}
+    for key, value in cfg.items():
+        if key.endswith("_column") and key not in {"name_column"}:
+            status_columns[key[: -len("_column")]] = int(value)
+
+    if not status_columns:
+        return None
+
+    return ShinchokuTarget(
+        spreadsheet_key=cfg["spreadsheet_key"],
+        sheet_name=cfg.get("sheet_name", "シート1"),
+        name_column=int(cfg["name_column"]) if cfg.get("name_column") else 2,
+        status_columns=status_columns,
+    )
+
+
+def _find_row_by_line_name(data: List[List[str]], line_name: str, name_column: Optional[int]) -> Optional[int]:
+    normalized_line_name = _normalize_line_name(line_name)
+    if not normalized_line_name:
+        return None
+
+    for row_index in range(1, len(data)):
+        row = data[row_index]
+        candidates: List[str]
+        if name_column is not None and len(row) >= name_column:
+            candidates = [row[name_column - 1]]
+        else:
+            candidates = row
+
+        for candidate in candidates:
+            if _normalize_line_name(candidate) == normalized_line_name:
+                return row_index + 1
+
+    return None
+
+
+@dataclass
+class ShinchokuConfig:
+    spreadsheet_key: str
+    sheet_name: str
+    target_columns: Dict[str, int]
 
 def _post_chatwork_message(lines: List[str]) -> None:
     payload = urllib.parse.urlencode({"body": "\n".join(lines)}).encode("utf-8")
@@ -420,21 +489,96 @@ def collect_pending_invites(
             scheduled_dt = None
 
         name = row[3].strip() if len(row) > 3 else ""
+        line_name = row[4].strip() if len(row) > 4 else ""
 
         if log_callback:
-            log_callback(f"{target_name}: 招待候補 row={row_index + 1}, email={email}")
+            log_callback(
+                f"{target_name}: 招待候補 row={row_index + 1}, email={email}, LINE名={line_name or '（未設定）'}"
+            )
 
         pending_invites.append(
             PendingInvite(
                 row_index=row_index + 1,
                 email=email,
                 name=name,
+                line_name=line_name,
                 scheduled_datetime=scheduled_dt,
             )
         )
 
     return sheet, pending_invites
 
+
+def load_shinchoku_config(config_path: Path) -> ShinchokuConfig:
+    with config_path.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    cfg = raw.get("shinchoku", {})
+    spreadsheet_key = cfg.get("spreadsheet_key")
+    sheet_name = cfg.get("sheet_name", "シート1")
+    if not spreadsheet_key:
+        raise ValueError("shichoku.json の shinchoku.spreadsheet_key が未設定です。")
+
+    target_columns: Dict[str, int] = {}
+    for key, value in cfg.items():
+        if not key.endswith("_column"):
+            continue
+        target_name = key[: -len("_column")]
+        target_columns[target_name] = int(value)
+
+    return ShinchokuConfig(
+        spreadsheet_key=spreadsheet_key,
+        sheet_name=sheet_name,
+        target_columns=target_columns,
+    )
+
+
+def update_shinchoku_sheet(
+    credentials_path: Path,
+    shinchoku_config: ShinchokuConfig,
+    target_name: str,
+    invites: List[PendingInvite],
+    log_callback: Optional[Callable[[str], None]] = None,
+) -> None:
+    progress_column = shinchoku_config.target_columns.get(target_name)
+    if progress_column is None:
+        if log_callback:
+            log_callback(f"{target_name}: shichoku列設定がないため進捗記録をスキップ")
+        return
+
+    client = gspread.service_account(filename=str(credentials_path))
+    sheet = client.open_by_key(shinchoku_config.spreadsheet_key).worksheet(shinchoku_config.sheet_name)
+
+    line_name_to_row: Dict[str, int] = {}
+    for row_index, line_name in enumerate(sheet.col_values(2), start=1):
+        normalized = _normalize_line_name(line_name)
+        if normalized and normalized not in line_name_to_row:
+            line_name_to_row[normalized] = row_index
+
+    processed_line_names = set()
+
+    for invite in invites:
+        normalized_line_name = _normalize_line_name(invite.line_name)
+        if not normalized_line_name:
+            if log_callback:
+                log_callback(f"{target_name}: LINE名未設定のため進捗記録をスキップ email={invite.email}")
+            continue
+
+        if normalized_line_name in processed_line_names:
+            continue
+
+        target_row = line_name_to_row.get(normalized_line_name)
+        if target_row is None:
+            if log_callback:
+                log_callback(f"{target_name}: shichokuシートでLINE名が見つからないためスキップ LINE名={invite.line_name}")
+            continue
+
+        sheet.update_cell(target_row, progress_column, "済")
+        processed_line_names.add(normalized_line_name)
+        if log_callback:
+            log_callback(
+                f"{target_name}: shichoku更新 row={target_row}, LINE名={invite.line_name}, 進捗列={progress_column}"
+            )
 
 def process_all_targets(
     service: NotionInviteService,
@@ -443,6 +587,31 @@ def process_all_targets(
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> int:
     total_invited = 0
+    shinchoku_target = load_shinchoku_target(Path("shichoku.json"))
+    shinchoku_sheet = None
+    shinchoku_data: List[List[str]] = []
+
+    if shinchoku_target is not None:
+        try:
+            client = gspread.service_account(filename=str(credentials_path))
+            shinchoku_sheet = client.open_by_key(shinchoku_target.spreadsheet_key).worksheet(shinchoku_target.sheet_name)
+            shinchoku_data = shinchoku_sheet.get_all_values()
+            if log_callback:
+                log_callback("shichokuシート読み込み完了")
+        except Exception as e:
+            shinchoku_sheet = None
+            if log_callback:
+                log_callback(f"shichokuシート読み込み失敗: {type(e).__name__}: {e}")
+    shichoku_path = Path(__file__).resolve().parent / "shichoku.json"
+    shinchoku_config: Optional[ShinchokuConfig] = None
+    if shichoku_path.exists():
+        try:
+            shinchoku_config = load_shinchoku_config(shichoku_path)
+        except Exception as e:
+            if log_callback:
+                log_callback(f"shichoku設定の読込に失敗: {e}")
+    elif log_callback:
+        log_callback(f"{shichoku_path.name} が見つからないため、進捗記録をスキップ")
 
     for target_name, target in targets.items():
         if log_callback:
@@ -473,6 +642,40 @@ def process_all_targets(
             sheet.update_cell(pending.row_index, target.status_column, target.invited_text)
             if log_callback:
                 log_callback(f"{target_name}: ステータス更新 row={pending.row_index}, email={pending.email}")
+
+            if shinchoku_sheet is None or shinchoku_target is None:
+                continue
+
+            shinchoku_status_column = shinchoku_target.status_columns.get(target_name)
+            if shinchoku_status_column is None:
+                if log_callback:
+                    log_callback(f"{target_name}: shichoku列設定なしのためスキップ")
+                continue
+
+            shinchoku_row = _find_row_by_line_name(
+                shinchoku_data,
+                pending.line_name,
+                shinchoku_target.name_column,
+            )
+
+            if shinchoku_row is None:
+                if log_callback:
+                    log_callback(f"{target_name}: shichokuシートでLINE名が見つからないためスキップ LINE名={pending.line_name}")
+                continue
+
+            shinchoku_sheet.update_cell(shinchoku_row, shinchoku_status_column, "済")
+            if log_callback:
+                log_callback(
+                    f"{target_name}: shichoku更新 row={shinchoku_row}, col={shinchoku_status_column}, LINE名={pending.line_name}"
+                )
+        if shinchoku_config is not None:
+            update_shinchoku_sheet(
+                credentials_path=credentials_path,
+                shinchoku_config=shinchoku_config,
+                target_name=target_name,
+                invites=pending_invites,
+                log_callback=log_callback,
+            )
         send_chatwork_group_notification(target_name, pending_invites)
         if log_callback:
             log_callback(f"{target_name}: Chatwork通知完了 (通知件数={len(pending_invites)})")

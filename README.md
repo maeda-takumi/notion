@@ -74,6 +74,13 @@ python notion_auto_invite.py week1_week2 \
 
 `email_column` / `status_column` / `invited_text` は省略可能です。
 `email_column` / `status_column` / `invited_text` は省略可能です。
+### 進捗シート（`shichoku.json`）連携
+
+`shichoku.json` が存在する場合、Notion 招待完了後に進捗シートも更新します。
+
+- `week3_week4_column` などの `*_column` は **「済」を書き込む列番号**
+- LINE名の照合は進捗シートの **B列** を使用（列番号は固定）
+- LINE名は全角/半角ゆれを吸収するため NFKC 正規化＋大文字小文字無視で比較
 ## PyInstaller での配布
 
 以下の spec を用意しています。
