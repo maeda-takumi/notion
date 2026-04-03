@@ -33,6 +33,22 @@ def resource_path(relative_path: str) -> Path:
     base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     return base_path / relative_path
 
+def runtime_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def resolve_shinchoku_path() -> Path:
+    base = runtime_base_dir()
+    primary = base / "shinchoku.json"
+    if primary.exists():
+        return primary
+
+    # 互換: 旧名
+    legacy = base / "shichoku.json"
+    return legacy
+
 @dataclass
 class InviteTarget:
     spreadsheet_key: str
@@ -517,7 +533,7 @@ def load_shinchoku_config(config_path: Path) -> ShinchokuConfig:
     spreadsheet_key = cfg.get("spreadsheet_key")
     sheet_name = cfg.get("sheet_name", "シート1")
     if not spreadsheet_key:
-        raise ValueError("shichoku.json の shinchoku.spreadsheet_key が未設定です。")
+        raise ValueError(f"{config_path.name} の shinchoku.spreadsheet_key が未設定です。")
 
     target_columns: Dict[str, int] = {}
     for key, value in cfg.items():
@@ -543,7 +559,7 @@ def update_shinchoku_sheet(
     progress_column = shinchoku_config.target_columns.get(target_name)
     if progress_column is None:
         if log_callback:
-            log_callback(f"{target_name}: shichoku列設定がないため進捗記録をスキップ")
+            log_callback(f"{target_name}: shinchoku列設定がないため進捗記録をスキップ")
         return
 
     client = gspread.service_account(filename=str(credentials_path))
@@ -561,7 +577,7 @@ def update_shinchoku_sheet(
         normalized_line_name = _normalize_line_name(invite.line_name)
         if not normalized_line_name:
             if log_callback:
-                log_callback(f"{target_name}: LINE名未設定のため進捗記録をスキップ email={invite.email}")
+                log_callback(f"{target_name}: shinchokuシートでLINE名が見つからないためスキップ LINE名={invite.line_name}")
             continue
 
         if normalized_line_name in processed_line_names:
@@ -577,7 +593,7 @@ def update_shinchoku_sheet(
         processed_line_names.add(normalized_line_name)
         if log_callback:
             log_callback(
-                f"{target_name}: shichoku更新 row={target_row}, LINE名={invite.line_name}, 進捗列={progress_column}"
+                f"{target_name}: shinchoku更新 row={target_row}, LINE名={invite.line_name}, 進捗列={progress_column}"
             )
 
 def process_all_targets(
@@ -587,7 +603,11 @@ def process_all_targets(
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> int:
     total_invited = 0
-    shinchoku_target = load_shinchoku_target(Path("shichoku.json"))
+    shinchoku_path = resolve_shinchoku_path()
+    if log_callback:
+        log_callback(f"進捗設定探索パス: {shinchoku_path}")
+
+    shinchoku_target = load_shinchoku_target(shinchoku_path)
     shinchoku_sheet = None
     shinchoku_data: List[List[str]] = []
 
@@ -597,21 +617,20 @@ def process_all_targets(
             shinchoku_sheet = client.open_by_key(shinchoku_target.spreadsheet_key).worksheet(shinchoku_target.sheet_name)
             shinchoku_data = shinchoku_sheet.get_all_values()
             if log_callback:
-                log_callback("shichokuシート読み込み完了")
+                log_callback("shinchokuシート読み込み完了")
         except Exception as e:
             shinchoku_sheet = None
             if log_callback:
-                log_callback(f"shichokuシート読み込み失敗: {type(e).__name__}: {e}")
-    shichoku_path = Path(__file__).resolve().parent / "shichoku.json"
+                log_callback(f"shinchokuシート読み込み失敗: {type(e).__name__}: {e}")
     shinchoku_config: Optional[ShinchokuConfig] = None
-    if shichoku_path.exists():
+    if shinchoku_path.exists():
         try:
-            shinchoku_config = load_shinchoku_config(shichoku_path)
+            shinchoku_config = load_shinchoku_config(shinchoku_path)
         except Exception as e:
             if log_callback:
-                log_callback(f"shichoku設定の読込に失敗: {e}")
+                log_callback(f"shinchoku設定の読込に失敗: {e}")
     elif log_callback:
-        log_callback(f"{shichoku_path.name} が見つからないため、進捗記録をスキップ")
+        log_callback(f"{shinchoku_path.name} が見つからないため、進捗記録をスキップ")
 
     for target_name, target in targets.items():
         if log_callback:
@@ -649,7 +668,7 @@ def process_all_targets(
             shinchoku_status_column = shinchoku_target.status_columns.get(target_name)
             if shinchoku_status_column is None:
                 if log_callback:
-                    log_callback(f"{target_name}: shichoku列設定なしのためスキップ")
+                    log_callback(f"{target_name}: shinchoku列設定なしのためスキップ")
                 continue
 
             shinchoku_row = _find_row_by_line_name(
@@ -660,13 +679,13 @@ def process_all_targets(
 
             if shinchoku_row is None:
                 if log_callback:
-                    log_callback(f"{target_name}: shichokuシートでLINE名が見つからないためスキップ LINE名={pending.line_name}")
+                    log_callback(f"{target_name}: shinchokuシートでLINE名が見つからないためスキップ LINE名={pending.line_name}")
                 continue
 
             shinchoku_sheet.update_cell(shinchoku_row, shinchoku_status_column, "済")
             if log_callback:
                 log_callback(
-                    f"{target_name}: shichoku更新 row={shinchoku_row}, col={shinchoku_status_column}, LINE名={pending.line_name}"
+                    f"{target_name}: shinchoku更新 row={shinchoku_row}, col={shinchoku_status_column}, LINE名={pending.line_name}"
                 )
         if shinchoku_config is not None:
             update_shinchoku_sheet(
